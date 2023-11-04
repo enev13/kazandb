@@ -1,43 +1,72 @@
-from typing import BinaryIO
+from typing import Any, BinaryIO
 from .exceptions import ResponseError
 
 
+CFLF = b"\r\n"
+
+
 class RESP2:
-    def read_response(self, buff: BinaryIO):
+    def decode(self, buff: BinaryIO) -> Any:
         """
-        Read a RESP2 response from a file-like object.
+        Decode a RESP2 message from a file-like object.
+
+        :param buff: A file-like object.
+        :return: The decoded message.
+        raises: ResponseError
         """
-        # Read the first byte of the response.
-        # This is the type of the response.
         raw = buff.readline()
-        resp_type = raw[:1]
-        response = raw[1:].strip()
+        data_type = raw[:1]
+        msg = raw[1:].strip(CFLF)
 
         # Error
-        if resp_type == b"-":
-            response = response.decode("utf-8", errors="replace")
-            raise ResponseError(response)
+        if data_type == b"-":
+            msg = msg.decode("utf-8", errors="replace")
+            raise ResponseError(msg)
         # Simple string
-        elif resp_type == b"+":
+        elif data_type == b"+":
             pass
         # Integer
-        elif resp_type == b":":
-            response = int(response)
+        elif data_type == b":":
+            msg = int(msg)
         # Null
-        elif resp_type == b"$" and response == b"-1":
+        elif data_type == b"$" and msg == b"-1":
             return None
         # Bulk string
-        elif resp_type == b"$":
-            response = buff.read(int(response) + 2).strip(b"\r\n")
+        elif data_type == b"$":
+            msg = buff.read(int(msg) + 2).strip(CFLF)
         # Null array
-        elif resp_type == b"*" and response == b"-1":
+        elif data_type == b"*" and msg == b"-1":
             return None
         # Bulk array
-        elif resp_type == b"*":
-            element_count = int(response)
+        elif data_type == b"*":
+            element_count = int(msg)
             if element_count == 0:
-                return
-            response = [self.read_response(buff) for _ in range(element_count)]
+                return []
+            msg = [self.decode(buff) for _ in range(element_count)]
         else:
             raise ResponseError("Unknown response type")
-        return response
+        return msg
+
+    def encode(self, msg: Any) -> bytes:
+        """
+        Encode a RESP2 message.
+
+        :param msg: The message to encode.
+        :return: The encoded pytmessage.
+        raises: ResponseError
+        """
+        if isinstance(msg, bytes):
+            return b"$%d\r\n%s\r\n" % (len(msg), msg)
+        elif isinstance(msg, str):
+            return b"+%b\r\n" % msg.encode("utf-8")
+        elif isinstance(msg, int):
+            return b":%d\r\n" % msg
+        elif msg is None:
+            return b"$-1\r\n"
+        elif isinstance(msg, list):
+            return b"*%d\r\n%s" % (
+                len(msg),
+                b"".join([self.encode(item) for item in msg]),
+            )
+        else:
+            raise ResponseError("Unknown response type")
