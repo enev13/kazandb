@@ -3,9 +3,9 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from kazandb.exceptions import ResponseError
-from kazandb.resp2 import RESP2
+from kazandb.parser.parser import RESPParser
 
-resp = RESP2()
+resp = RESPParser("resp2")
 
 
 def test_decode_string():
